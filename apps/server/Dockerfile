@@ -6,8 +6,10 @@ COPY apps/server/package.json apps/server/package.json
 COPY packages/shared/package.json packages/shared/package.json
 RUN npm ci
 COPY tsconfig.base.json ./
-COPY apps/server apps/server
-COPY packages/shared packages/shared
+COPY apps/server/tsconfig.json apps/server/tsconfig.json
+COPY apps/server/src apps/server/src
+COPY packages/shared/tsconfig.json packages/shared/tsconfig.json
+COPY packages/shared/src packages/shared/src
 RUN npm run build -w @pixel-dice-duel/shared && npm run build -w @pixel-dice-duel/server
 
 FROM node:22-alpine
