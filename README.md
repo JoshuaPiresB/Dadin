@@ -168,33 +168,71 @@ A suíte cobre:
 
 Além da suíte automatizada, o fluxo foi validado em navegador com dois clientes: criação de sala, entrada por link, jogadas sincronizadas, atualização da página e reconexão com o placar preservado.
 
-## Deploy
+## Deploy recomendado: Vercel + Render
 
-### Frontend
+O repositório já contém:
 
-Execute `npm run build` e hospede `apps/client/dist` em um serviço de arquivos estáticos. Configure fallback de SPA para `index.html` nas rotas `/play`, `/online`, `/room/*` e `/join/*`. Defina:
+- `vercel.json`: compila apenas o pacote compartilhado e o frontend, publica `apps/client/dist` e mantém as rotas do React funcionando ao atualizar a página;
+- `render.yaml`: cria um único servidor WebSocket no Render usando o Dockerfile existente;
+- `.dockerignore`: evita enviar dependências e builds locais para o contexto Docker.
+
+### 1. Envie o projeto para um repositório Git
+
+Vercel e Render podem acompanhar o mesmo repositório. Não envie arquivos `.env`.
+
+### 2. Publique o servidor no Render
+
+1. No Render, selecione **New → Blueprint** e conecte o repositório.
+2. O Render detectará `render.yaml` e criará o serviço `dadin-server`.
+3. Quando solicitado, preencha `CLIENT_URL` com a futura origem do frontend, por exemplo `https://dadin.vercel.app`. Não coloque barra no final.
+4. Após o deploy, copie a URL HTTPS gerada, como `https://dadin-server.onrender.com`.
+5. Confirme que `https://SEU-SERVIDOR.onrender.com/health` responde com `{"ok":true,"game":"Dadin"}`.
+
+O plano gratuito do Render pode suspender o serviço depois de um período sem tráfego. Nesse caso, a primeira conexão pode demorar enquanto o servidor é iniciado novamente.
+
+### 3. Publique o frontend na Vercel
+
+1. Importe o mesmo repositório na Vercel.
+2. Mantenha a raiz do projeto como diretório raiz. O arquivo `vercel.json` fornece o build e a pasta de saída.
+3. Em **Settings → Environment Variables**, adicione estas duas variáveis aos ambientes desejados:
 
 ```dotenv
-VITE_GAME_SERVER_URL=wss://api.seudominio.com
-VITE_GAME_API_URL=https://api.seudominio.com
+VITE_GAME_SERVER_URL=wss://SEU-SERVIDOR.onrender.com
+VITE_GAME_API_URL=https://SEU-SERVIDOR.onrender.com
 ```
 
-### Servidor
+4. Faça o deploy. Variáveis `VITE_*` são incorporadas durante o build; depois de alterá-las, é necessário gerar um novo deploy.
+5. Copie o domínio de produção fornecido pela Vercel.
 
-O backend precisa de um processo Node persistente com suporte a WebSocket; não use funções serverless efêmeras. Configure `CLIENT_URL` para o domínio do frontend e exponha a porta definida em `PORT`.
+### 4. Finalize a ligação entre os serviços
 
-Build e execução direta:
+No Render, atualize `CLIENT_URL` com a origem exata da Vercel:
+
+```dotenv
+CLIENT_URL=https://SEU-PROJETO.vercel.app
+```
+
+Salve a configuração e aguarde o redeploy. Para permitir mais de uma origem, separe os endereços por vírgula.
+
+### 5. Teste online
+
+1. Abra o endereço da Vercel e crie uma sala.
+2. Copie o link ou código.
+3. Abra uma janela anônima ou outro dispositivo e entre na sala.
+4. Se aparecer “Servidor indisponível” na primeira tentativa do plano gratuito, aguarde o endpoint `/health` responder e tente novamente.
+
+As salas desta versão ficam em memória. Mantenha o servidor com uma única instância; antes de escalar horizontalmente, adicione um driver de presença e estado compartilhado.
+
+### Execução manual do servidor
 
 ```powershell
 npm run build
 npm run start -w @pixel-dice-duel/server
 ```
 
-Ou use o Dockerfile:
+Ou com Docker:
 
 ```powershell
 docker build -f apps/server/Dockerfile -t dadin-server .
 docker run --rm -p 2567:2567 -e PORT=2567 -e CLIENT_URL=https://jogo.exemplo dadin-server
 ```
-
-Em produção, termine TLS no proxy/plataforma para que o frontend HTTPS use `wss://`. Como as salas desta versão ficam em memória, execute uma única instância ou adicione presença/driver compartilhado antes de escalar horizontalmente.

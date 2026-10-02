@@ -30,5 +30,5 @@ const httpServer = createServer(app);
 const gameServer = new Server({ transport: new WebSocketTransport({ server: httpServer }) });
 gameServer.define("dice_duel", DiceDuelRoom);
 
-await gameServer.listen(env.port);
+await gameServer.listen(env.port, "0.0.0.0");
 console.info(`${GAME_TITLE} server listening on http://localhost:${env.port}`);
