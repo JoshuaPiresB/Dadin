@@ -1,0 +1,18 @@
+{
+  "name": "dadin",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev": "npm run build -w @pixel-dice-duel/shared && concurrently -k -n SERVER,CLIENT -c magenta,cyan \"npm run dev -w @pixel-dice-duel/server\" \"npm run dev -w @pixel-dice-duel/client\"",
+    "build": "npm run build -w @pixel-dice-duel/shared && npm run build -w @pixel-dice-duel/server && npm run build -w @pixel-dice-duel/client",
+    "test": "vitest run",
+    "lint": "npm run build -w @pixel-dice-duel/shared && npm run lint --workspaces --if-present"
+  },
+  "devDependencies": {
+    "concurrently": "latest",
+    "typescript": "latest",
+    "vitest": "latest"
+  },
+  "engines": { "node": ">=20.19" }
+}

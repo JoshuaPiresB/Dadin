@@ -1,0 +1,26 @@
+{
+  "name": "@pixel-dice-duel/server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsc -p tsconfig.json && concurrently -k -n TSC,NODE \"tsc -p tsconfig.json -w --preserveWatchOutput\" \"node --watch dist/index.js\"",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@colyseus/schema": "^5.0.35",
+    "@colyseus/ws-transport": "^0.18.4",
+    "@pixel-dice-duel/shared": "1.0.0",
+    "colyseus": "^0.18.9",
+    "cors": "latest",
+    "dotenv": "latest",
+    "express": "latest"
+  },
+  "devDependencies": {
+    "@types/cors": "latest",
+    "@types/express": "latest",
+    "@types/node": "latest"
+  }
+}
