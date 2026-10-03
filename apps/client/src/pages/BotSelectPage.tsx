@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import type { Difficulty } from "@pixel-dice-duel/shared";
+import { BOT_COIN_REWARDS, type Difficulty } from "@pixel-dice-duel/shared";
 import { PageShell } from "../components/PageShell";
 import { PixelButton } from "../components/PixelButton";
 
@@ -13,9 +13,8 @@ export function BotSelectPage() {
   const navigate = useNavigate();
   return <PageShell title="Oráculos da taverna"><div className="difficulty-grid">
     {choices.map((choice) => <button key={choice.id} className="difficulty-card" onClick={() => navigate(`/play/bot/match?difficulty=${choice.id}`)}>
-      <b>{choice.icon}</b><h2>{choice.title}</h2><p>{choice.copy}</p>
+      <b>{choice.icon}</b><h2>{choice.title}</h2><p>{choice.copy}</p><span className="bot-reward">● Vitória: +{BOT_COIN_REWARDS[choice.id]}</span>
     </button>)}
     <PixelButton className="span-all" variant="ghost" onClick={() => navigate("/play")}>Voltar</PixelButton>
   </div></PageShell>;
 }
-

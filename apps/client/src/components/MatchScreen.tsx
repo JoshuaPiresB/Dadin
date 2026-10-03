@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, type ReactNode } from "react";
 import type { ColumnIndex } from "@pixel-dice-duel/shared";
 import type { GameViewSnapshot } from "../types/game";
 import { PhaserGame } from "../game/PhaserGame";
@@ -15,9 +15,13 @@ interface Props {
   replayLabel?: string;
   secondaryAction?: () => void;
   secondaryLabel?: string;
+  resultEyebrow?: string;
+  resultTitle?: string;
+  resultDetail?: ReactNode;
+  resultActions?: ReactNode;
 }
 
-export function MatchScreen({ snapshot, onColumn, onReplay, onMenu, onPause, paused, statusLabel, replayLabel = "Jogar novamente", secondaryAction, secondaryLabel }: Props) {
+export function MatchScreen({ snapshot, onColumn, onReplay, onMenu, onPause, paused, statusLabel, replayLabel = "Jogar novamente", secondaryAction, secondaryLabel, resultEyebrow, resultTitle, resultDetail, resultActions }: Props) {
   const safeColumn = useCallback((column: ColumnIndex) => {
     if (!paused) onColumn(column);
   }, [onColumn, paused]);
@@ -55,12 +59,15 @@ export function MatchScreen({ snapshot, onColumn, onReplay, onMenu, onPause, pau
 
       {snapshot.status !== "PLAYING" && snapshot.status !== "WAITING" && (
         <div className="modal-backdrop"><div className="result-panel">
-          <p className="eyebrow">O duelo terminou</p><h2>{title}</h2>
+          <p className="eyebrow">{resultEyebrow ?? "O duelo terminou"}</p><h2>{resultTitle ?? title}</h2>
           {snapshot.finishReason && snapshot.finishReason !== "score" && <p className="result-reason">Vitória por abandono</p>}
           <div className="score-line"><span>{snapshot.me.nickname}</span><b>{snapshot.me.score}</b></div>
           <div className="score-line"><span>{snapshot.opponent.nickname}</span><b>{snapshot.opponent.score}</b></div>
-          <PixelButton onClick={onReplay}>{replayLabel}</PixelButton>
-          {secondaryAction && secondaryLabel && <PixelButton variant="wine" onClick={secondaryAction}>{secondaryLabel}</PixelButton>}
+          {resultDetail}
+          {resultActions ?? <>
+            <PixelButton onClick={onReplay}>{replayLabel}</PixelButton>
+            {secondaryAction && secondaryLabel && <PixelButton variant="wine" onClick={secondaryAction}>{secondaryLabel}</PixelButton>}
+          </>}
           <PixelButton variant="ghost" onClick={onMenu}>Voltar ao menu</PixelButton>
         </div></div>
       )}

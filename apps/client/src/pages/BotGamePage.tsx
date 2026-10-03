@@ -18,7 +18,7 @@ export function BotGamePage() {
       onMenu={() => navigate("/")}
       onPause={() => game.setPaused((value) => !value)}
       paused={game.paused}
+      resultDetail={game.earnedCoins > 0 ? <p className="coin-result coin-result--win">+{game.earnedCoins} moedas</p> : undefined}
     />
   </PageShell>;
 }
-

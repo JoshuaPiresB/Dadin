@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  BOT_COIN_REWARDS,
   applyMove,
   chooseBotMove,
   createEmptyBoard,
@@ -12,6 +13,7 @@ import {
 import type { GameViewSnapshot, ViewPlayer } from "../types/game";
 import { playSound } from "../services/audio";
 import { loadSettings } from "../store/settings";
+import { awardBotVictory } from "../store/wallet";
 
 function secureDie(): DieValue {
   const value = new Uint32Array(1);
@@ -42,7 +44,9 @@ function initialSnapshot(): GameViewSnapshot {
 export function useBotGame(difficulty: Difficulty) {
   const [snapshot, setSnapshot] = useState<GameViewSnapshot>(initialSnapshot);
   const [paused, setPaused] = useState(false);
+  const [earnedCoins, setEarnedCoins] = useState(0);
   const timerRef = useRef<number | undefined>(undefined);
+  const rewardClaimed = useRef(false);
 
   const startRoll = useCallback(() => {
     playSound("roll");
@@ -109,7 +113,19 @@ export function useBotGame(difficulty: Difficulty) {
     return () => window.clearTimeout(timer);
   }, [snapshot, difficulty, paused, playMove]);
 
-  const reset = useCallback(() => setSnapshot(initialSnapshot()), []);
+  useEffect(() => {
+    if (snapshot.status !== "FINISHED" || snapshot.winnerId !== snapshot.me.id || rewardClaimed.current) return;
+    rewardClaimed.current = true;
+    const reward = BOT_COIN_REWARDS[difficulty];
+    awardBotVictory(difficulty);
+    setEarnedCoins(reward);
+  }, [snapshot.status, snapshot.winnerId, snapshot.me.id, difficulty]);
+
+  const reset = useCallback(() => {
+    rewardClaimed.current = false;
+    setEarnedCoins(0);
+    setSnapshot(initialSnapshot());
+  }, []);
   const chooseColumn = useCallback((column: ColumnIndex) => playMove("human", column), [playMove]);
-  return { snapshot, chooseColumn, reset, paused, setPaused };
+  return { snapshot, chooseColumn, reset, paused, setPaused, earnedCoins };
 }
