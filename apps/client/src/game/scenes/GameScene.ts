@@ -24,6 +24,7 @@ export class GameScene extends Phaser.Scene {
   private bridge!: GameBridge;
   private snapshot?: GameViewSnapshot;
   private rollEvent?: Phaser.Time.TimerEvent;
+  private unsubscribeSnapshot?: () => void;
 
   constructor() {
     super("GameScene");
@@ -34,8 +35,14 @@ export class GameScene extends Phaser.Scene {
   }
 
   create(): void {
-    this.bridge.on("snapshot", (snapshot) => this.updateSnapshot(snapshot));
-    if (this.snapshot) this.draw(this.snapshot, this.snapshot.currentDie);
+    this.unsubscribeSnapshot?.();
+    this.unsubscribeSnapshot = this.bridge.on("snapshot", (snapshot) => this.updateSnapshot(snapshot));
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.unsubscribeSnapshot?.();
+      this.unsubscribeSnapshot = undefined;
+    });
+    const initialSnapshot = this.registry.get("initialSnapshot") as GameViewSnapshot | undefined;
+    if (initialSnapshot) this.updateSnapshot(initialSnapshot);
   }
 
   private updateSnapshot(snapshot: GameViewSnapshot): void {
@@ -105,6 +112,7 @@ export class GameScene extends Phaser.Scene {
       const x = centerX + (columnIndex - 1) * 96;
       const score = calculateColumnScore(column);
       const counts = new Map<DieValue, number>();
+      const boxes: Phaser.GameObjects.Rectangle[] = [];
       column.forEach((die) => counts.set(die, (counts.get(die) ?? 0) + 1));
 
       const scoreText = this.add.text(x, labelY, `${score}`, {
@@ -126,13 +134,7 @@ export class GameScene extends Phaser.Scene {
             isColumnFull(column) ? 0x5f5268 : PALETTE.gold,
             isColumnFull(column) ? 0.45 : 0.85,
           );
-
-        if (mine && interactive && !isColumnFull(column)) {
-          box.setInteractive({ useHandCursor: true })
-            .on("pointerover", () => box.setFillStyle(PALETTE.wine, 0.8))
-            .on("pointerout", () => box.setFillStyle(PALETTE.shadow, 0.58))
-            .on("pointerdown", () => this.bridge.emit("column", columnIndex as ColumnIndex));
-        }
+        boxes.push(box);
       }
 
       column.forEach((die, slot) => {
@@ -147,6 +149,15 @@ export class GameScene extends Phaser.Scene {
           mine,
         );
       });
+
+      if (mine && interactive && !isColumnFull(column)) {
+        this.add.rectangle(x, centerY, 96, 198, 0xffffff, 0.001)
+          .setDepth(20)
+          .setInteractive({ useHandCursor: true })
+          .on("pointerover", () => boxes.forEach((box) => box.setFillStyle(PALETTE.wine, 0.8)))
+          .on("pointerout", () => boxes.forEach((box) => box.setFillStyle(PALETTE.shadow, 0.58)))
+          .on("pointerup", () => this.bridge.emit("column", columnIndex as ColumnIndex));
+      }
     });
   }
 

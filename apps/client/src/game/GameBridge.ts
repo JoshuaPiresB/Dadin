@@ -28,4 +28,8 @@ export class GameBridge {
     const set = this.listeners.get(event);
     set?.forEach((listener) => listener(value));
   }
+
+  clear(event: keyof ListenerMap): void {
+    this.listeners.get(event)?.clear();
+  }
 }
