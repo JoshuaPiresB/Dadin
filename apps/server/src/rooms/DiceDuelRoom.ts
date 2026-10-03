@@ -12,11 +12,12 @@ import {
   type DieValue,
 } from "@pixel-dice-duel/shared";
 import { createRoomCode, releaseRoomCode } from "../services/roomRegistry.js";
-import { validateNickname } from "../utils/validation.js";
+import { validateCoinBalance, validateNickname, validateWager } from "../utils/validation.js";
 import { DiceRoomState, PlayerSchema, resetPlayer, schemaToBoard, writeBoard } from "./schema.js";
 
-interface JoinOptions { nickname?: unknown }
+interface JoinOptions { nickname?: unknown; coins?: unknown; wager?: unknown }
 interface PlaceDiePayload { column?: unknown }
+interface WagerPayload { amount?: unknown }
 
 export class DiceDuelRoom extends Room<{ state: DiceRoomState }> {
   override maxClients = 2;
@@ -24,18 +25,23 @@ export class DiceDuelRoom extends Room<{ state: DiceRoomState }> {
   private voluntaryLeaves = new Set<string>();
   private lastMessageAt = new Map<string, number>();
 
-  override onCreate(): void {
+  override onCreate(options: JoinOptions): void {
     this.setState(new DiceRoomState());
-    this.state.roomCode = createRoomCode(this.roomId);
-    this.setMetadata({ roomCode: this.state.roomCode });
+    this.state.wager = validateWager(options.wager ?? 0);
+    this.state.roomCode = createRoomCode(this.roomId, this.state.wager);
+    this.setMetadata({ roomCode: this.state.roomCode, wager: this.state.wager });
     this.setPrivate(true);
 
     this.onMessage(CLIENT_MESSAGES.PLACE_DIE, (client, payload: PlaceDiePayload) => this.handleMove(client, payload));
     this.onMessage(CLIENT_MESSAGES.REQUEST_REMATCH, (client) => this.handleRematch(client));
+    this.onMessage(CLIENT_MESSAGES.PROPOSE_WAGER, (client, payload: WagerPayload) => this.handleWagerProposal(client, payload));
+    this.onMessage(CLIENT_MESSAGES.ACCEPT_WAGER, (client) => this.handleWagerAcceptance(client));
+    this.onMessage(CLIENT_MESSAGES.DECLINE_WAGER, (client) => this.handleWagerDecline(client));
     this.onMessage(CLIENT_MESSAGES.DECLINE_REMATCH, (client) => {
       const player = this.state.players.get(client.sessionId);
       if (!player || this.state.status === "PLAYING") return;
-      player.rematch = false;
+      this.state.players.forEach((entry) => { entry.rematch = false; });
+      this.state.status = "FINISHED";
       this.broadcast(SERVER_MESSAGES.REMATCH_DECLINED, { nickname: player.nickname });
     });
     this.onMessage(CLIENT_MESSAGES.LEAVE_MATCH, (client) => {
@@ -49,6 +55,7 @@ export class DiceDuelRoom extends Room<{ state: DiceRoomState }> {
   override onAuth(_client: Client, options: JoinOptions): boolean {
     try {
       validateNickname(options.nickname);
+      validateCoinBalance(options.coins);
       return true;
     } catch {
       return false;
@@ -59,10 +66,15 @@ export class DiceDuelRoom extends Room<{ state: DiceRoomState }> {
     if (this.state.status !== "WAITING" || this.state.players.size >= 2) {
       throw new Error("A sala não aceita novos jogadores.");
     }
+    const coins = validateCoinBalance(options.coins);
+    if (coins < this.state.wager) throw new Error(`Você precisa de ${this.state.wager} moedas para entrar nesta sala.`);
+
     const player = new PlayerSchema();
     player.id = client.sessionId;
     player.nickname = validateNickname(options.nickname);
+    player.coins = coins;
     this.state.players.set(client.sessionId, player);
+    if (!this.state.hostPlayerId) this.state.hostPlayerId = client.sessionId;
     console.info(`[room ${this.state.roomCode}] player joined: ${player.nickname}`);
     if (this.state.players.size === 2) this.startMatch();
   }
@@ -71,15 +83,28 @@ export class DiceDuelRoom extends Room<{ state: DiceRoomState }> {
     return randomInt(1, 7) as DieValue;
   }
 
-  private startMatch(): void {
+  private startMatch(wager = this.state.wager): void {
     const players = [...this.state.players.values()];
+    if (players.length !== 2) return;
+    if (players.some((player) => player.coins < wager)) {
+      this.state.status = "WAGER_SETUP";
+      this.broadcast(SERVER_MESSAGES.NOTICE, { message: "Um dos jogadores não possui moedas suficientes para essa aposta." });
+      return;
+    }
+
     players.forEach(resetPlayer);
+    this.state.wager = wager;
+    this.state.pot = wager * players.length;
+    this.state.proposedWager = -1;
+    this.state.wagerProposalBy = "";
+    if (wager > 0) players.forEach((player) => { player.coins -= wager; });
     this.state.status = "PLAYING";
     this.state.winnerId = "";
     this.state.finishReason = "";
     this.state.currentTurnPlayerId = players[randomInt(players.length)]!.id;
     this.state.currentDie = this.rollDie();
     this.state.turnRevision += 1;
+    this.state.round += 1;
     console.info(`[room ${this.state.roomCode}] match started`);
   }
 
@@ -137,6 +162,7 @@ export class DiceDuelRoom extends Room<{ state: DiceRoomState }> {
     this.state.currentTurnPlayerId = "";
     this.state.finishReason = "score";
     this.state.winnerId = result === "DRAW" ? "DRAW" : result === "PLAYER_ONE" ? active.id : opponent.id;
+    this.settleWager();
     console.info(`[room ${this.state.roomCode}] match finished (${this.state.winnerId})`);
   }
 
@@ -146,7 +172,18 @@ export class DiceDuelRoom extends Room<{ state: DiceRoomState }> {
     this.state.currentTurnPlayerId = "";
     this.state.finishReason = reason;
     this.state.winnerId = opponent?.id ?? "";
+    this.settleWager();
     console.info(`[room ${this.state.roomCode}] match finished by ${reason}`);
+  }
+
+  private settleWager(): void {
+    if (this.state.pot <= 0) return;
+    if (this.state.winnerId === "DRAW") {
+      this.state.players.forEach((player) => { player.coins += this.state.wager; });
+      return;
+    }
+    const winner = this.state.players.get(this.state.winnerId);
+    if (winner) winner.coins += this.state.pot;
   }
 
   private handleRematch(client: Client): void {
@@ -156,7 +193,50 @@ export class DiceDuelRoom extends Room<{ state: DiceRoomState }> {
     player.rematch = true;
     this.state.status = "REMATCH_WAITING";
     const players = [...this.state.players.values()];
-    if (players.length === 2 && players.every((entry) => entry.rematch && entry.connected)) this.startMatch();
+    if (players.length !== 2 || !players.every((entry) => entry.rematch && entry.connected)) return;
+    if (this.state.wager > 0) {
+      players.forEach((entry) => { entry.rematch = false; });
+      this.state.status = "WAGER_SETUP";
+      this.state.proposedWager = -1;
+      this.state.wagerProposalBy = "";
+      return;
+    }
+    this.startMatch(0);
+  }
+
+  private handleWagerProposal(client: Client, payload: WagerPayload): void {
+    if (this.state.status !== "WAGER_SETUP") return this.reject(client, "A próxima partida ainda não pode ser configurada.");
+    if (client.sessionId !== this.state.hostPlayerId) return this.reject(client, "Apenas o criador da sala pode definir a próxima aposta.");
+    let amount: number;
+    try {
+      amount = validateWager(payload?.amount);
+    } catch (error) {
+      return this.reject(client, error instanceof Error ? error.message : "Aposta inválida.");
+    }
+    const players = [...this.state.players.values()];
+    if (players.some((player) => player.coins < amount)) {
+      return this.reject(client, "Um dos jogadores não possui moedas suficientes para essa aposta.");
+    }
+    this.state.proposedWager = amount;
+    this.state.wagerProposalBy = client.sessionId;
+    this.broadcast(SERVER_MESSAGES.NOTICE, {
+      message: amount > 0 ? `Nova aposta proposta: ${amount} moedas por jogador.` : "Foi proposta uma partida sem aposta.",
+    });
+  }
+
+  private handleWagerAcceptance(client: Client): void {
+    if (this.state.status !== "WAGER_SETUP" || this.state.proposedWager < 0) return this.reject(client, "Não existe uma aposta aguardando resposta.");
+    if (client.sessionId === this.state.wagerProposalBy) return this.reject(client, "A proposta precisa ser aceita pelo adversário.");
+    this.startMatch(this.state.proposedWager);
+  }
+
+  private handleWagerDecline(client: Client): void {
+    if (this.state.status !== "WAGER_SETUP" || this.state.proposedWager < 0) return;
+    if (client.sessionId === this.state.wagerProposalBy) return;
+    const player = this.state.players.get(client.sessionId);
+    this.state.proposedWager = -1;
+    this.state.wagerProposalBy = "";
+    this.broadcast(SERVER_MESSAGES.WAGER_DECLINED, { nickname: player?.nickname ?? "O adversário" });
   }
 
   override async onLeave(client: Client, _code?: number): Promise<void> {

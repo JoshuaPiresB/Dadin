@@ -7,7 +7,7 @@ import { WebSocketTransport } from "@colyseus/ws-transport";
 import { GAME_TITLE } from "@pixel-dice-duel/shared";
 import { env } from "./config/env.js";
 import { DiceDuelRoom } from "./rooms/DiceDuelRoom.js";
-import { findRoomId } from "./services/roomRegistry.js";
+import { findRoomInfo } from "./services/roomRegistry.js";
 import { validateRoomCode } from "./utils/validation.js";
 
 const app = express();
@@ -18,9 +18,9 @@ app.get("/health", (_request, response) => response.json({ ok: true, game: GAME_
 app.get("/api/rooms/:roomCode", (request, response) => {
   try {
     const code = validateRoomCode(request.params.roomCode);
-    const roomId = findRoomId(code);
-    if (!roomId) return response.status(404).json({ error: "Não conseguimos encontrar essa sala." });
-    return response.json({ roomId, roomCode: code });
+    const room = findRoomInfo(code);
+    if (!room) return response.status(404).json({ error: "Não conseguimos encontrar essa sala." });
+    return response.json({ roomId: room.roomId, roomCode: code, wager: room.wager });
   } catch (error) {
     return response.status(400).json({ error: error instanceof Error ? error.message : "Código inválido." });
   }

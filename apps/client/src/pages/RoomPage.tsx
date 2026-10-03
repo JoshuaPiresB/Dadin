@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { CLIENT_MESSAGES, SERVER_MESSAGES, type ColumnIndex, type OnlineGameSnapshot } from "@pixel-dice-duel/shared";
+import { CLIENT_MESSAGES, MAX_WAGER, SERVER_MESSAGES, type ColumnIndex, type OnlineGameSnapshot } from "@pixel-dice-duel/shared";
 import { PageShell } from "../components/PageShell";
 import { PixelButton } from "../components/PixelButton";
 import { MatchScreen } from "../components/MatchScreen";
 import { network, toSnapshot } from "../services/network";
 import type { GameViewSnapshot } from "../types/game";
 import { loadSettings } from "../store/settings";
+import { setCoinBalance } from "../store/wallet";
 
 type ConnectionStatus = "Conectado" | "Reconectando..." | "Desconectado";
 
@@ -19,6 +20,7 @@ export function RoomPage() {
   const [rolling, setRolling] = useState(true);
   const [locked, setLocked] = useState(true);
   const [notice, setNotice] = useState("");
+  const [nextWager, setNextWager] = useState("10");
   const rollingTimer = useRef<number | undefined>(undefined);
   const lastRevision = useRef(-1);
 
@@ -39,6 +41,8 @@ export function RoomPage() {
           if (!active) return;
           const next = toSnapshot(raw);
           setState(next);
+          const ownPlayer = next.players.find((player) => player.id === room.sessionId);
+          if (ownPlayer) setCoinBalance(ownPlayer.coins);
           setLocked(false);
           if (next.turnRevision !== lastRevision.current && next.status === "PLAYING") {
             lastRevision.current = next.turnRevision;
@@ -52,6 +56,8 @@ export function RoomPage() {
           setLocked(false); setNotice(payload.reason ?? "A jogada foi rejeitada.");
         });
         const offNotice = room.onMessage(SERVER_MESSAGES.REMATCH_DECLINED, (payload: { nickname?: string }) => setNotice(`${payload.nickname ?? "O rival"} recusou a revanche.`));
+        const offServerNotice = room.onMessage(SERVER_MESSAGES.NOTICE, (payload: { message?: string }) => setNotice(payload.message ?? "Aviso da sala."));
+        const offWagerDeclined = room.onMessage(SERVER_MESSAGES.WAGER_DECLINED, (payload: { nickname?: string }) => setNotice(`${payload.nickname ?? "O rival"} recusou a proposta de aposta.`));
         const leaveHandler = () => { setConnection("Desconectado"); setLocked(true); };
         room.onLeave(leaveHandler);
         cleanups = [
@@ -59,6 +65,8 @@ export function RoomPage() {
           () => room.onLeave.remove(leaveHandler),
           offReject,
           offNotice,
+          offServerNotice,
+          offWagerDeclined,
         ];
         const initialState = room.state as typeof room.state | undefined;
         if (initialState?.players) update(initialState);
@@ -125,6 +133,7 @@ export function RoomPage() {
       <p className="eyebrow">Mesa de {me.nickname}</p><h2>Aguardando adversário...</h2>
       <div className="versus-placeholder"><span>{me.nickname}</span><b>VS</b><span className="muted">?</span></div>
       <p>Código da sala</p><strong className="room-code">{state.roomCode}</strong>
+      {state.wager > 0 && <div className="wager-card"><span>Aposta por jogador</span><strong>● {state.wager}</strong><small>Prêmio total: {state.wager * 2} moedas</small></div>}
       <div className="lobby-buttons"><PixelButton onClick={() => void copy(state.roomCode, "Código")}>Copiar código</PixelButton><PixelButton variant="wine" onClick={() => void copy(inviteUrl, "Link")}>Copiar link</PixelButton></div>
       {notice && <p className="notice">{notice}</p>}
       <PixelButton variant="ghost" onClick={leave}>Fechar sala</PixelButton>
@@ -136,17 +145,51 @@ export function RoomPage() {
   const statusLabel = rivalDisconnected ? "Adversário desconectado · aguardando reconexão" : connection;
   const requestRematch = () => network.room?.send(CLIENT_MESSAGES.REQUEST_REMATCH);
   const declineRematch = () => network.room?.send(CLIENT_MESSAGES.DECLINE_REMATCH);
+  const proposeWager = (amount: number) => {
+    setNotice("");
+    network.room?.send(CLIENT_MESSAGES.PROPOSE_WAGER, { amount });
+  };
+  const wagerSetup = state.status === "WAGER_SETUP";
+  const isHost = state.hostPlayerId === me.id;
+  const proposalPending = state.proposedWager >= 0;
+  const proposedByMe = state.wagerProposalBy === me.id;
+  const parsedNextWager = Number(nextWager);
+  const validNextWager = Number.isSafeInteger(parsedNextWager) && parsedNextWager > 0 && parsedNextWager <= MAX_WAGER;
+  const resultDetail = wagerSetup ? <div className="wager-setup">
+    <div className="wager-balances"><span>Seu saldo <b>● {me.coins}</b></span><span>Saldo rival <b>● {opponent.coins}</b></span></div>
+    {proposalPending && <p className="wager-proposal">{state.proposedWager > 0 ? <>Aposta proposta: <strong>{state.proposedWager} moedas por jogador</strong></> : <strong>Próxima partida sem aposta</strong>}</p>}
+    {!proposalPending && !isHost && <p>Aguardando o criador da sala escolher a próxima aposta.</p>}
+    {isHost && <label className="field"><span>Nova aposta por jogador</span><input type="number" min={1} max={MAX_WAGER} inputMode="numeric" value={nextWager} onChange={(event) => setNextWager(event.target.value)} /></label>}
+  </div> : state.wager > 0 ? <div className="wager-result">
+    <span>Aposta: {state.wager} por jogador</span>
+    <strong>{state.winnerId === "DRAW" ? "Aposta devolvida" : state.winnerId === me.id ? `Você recebeu ${state.pot} moedas` : `Você perdeu ${state.wager} moedas`}</strong>
+    <small>Seu saldo: ● {me.coins}</small>
+  </div> : undefined;
+  const resultActions = wagerSetup ? <div className="wager-actions">
+    {isHost ? <>
+      <PixelButton disabled={!validNextWager} onClick={() => proposeWager(parsedNextWager)}>Propor aposta</PixelButton>
+      <PixelButton variant="wine" onClick={() => proposeWager(0)}>Parar com a aposta</PixelButton>
+      {proposalPending && proposedByMe && <p className="muted-wait">Aguardando o adversário aceitar.</p>}
+    </> : proposalPending ? <>
+      <PixelButton onClick={() => network.room?.send(CLIENT_MESSAGES.ACCEPT_WAGER)}>{state.proposedWager > 0 ? "Aceitar aposta" : "Jogar sem aposta"}</PixelButton>
+      <PixelButton variant="danger" onClick={() => network.room?.send(CLIENT_MESSAGES.DECLINE_WAGER)}>Recusar proposta</PixelButton>
+    </> : <p className="muted-wait">Aguardando proposta...</p>}
+  </div> : undefined;
   return <PageShell compact title={`Sala ${state.roomCode}`}>
     {notice && <button className="notice floating" onClick={() => setNotice("")}>{notice}</button>}
     <MatchScreen
       snapshot={snapshot}
       onColumn={chooseColumn}
       onReplay={requestRematch}
-      replayLabel={me.rematch ? "Revanche solicitada" : "Pedir revanche"}
-      secondaryAction={state.status === "REMATCH_WAITING" && opponent.rematch && !me.rematch ? requestRematch : state.status === "REMATCH_WAITING" ? declineRematch : undefined}
-      secondaryLabel={state.status === "REMATCH_WAITING" && opponent.rematch && !me.rematch ? "Aceitar revanche" : "Recusar revanche"}
+      replayLabel={me.rematch ? "Aguardando adversário" : "Jogar novamente"}
+      secondaryAction={state.status === "REMATCH_WAITING" ? declineRematch : undefined}
+      secondaryLabel="Não jogar novamente"
       onMenu={leave}
       statusLabel={statusLabel}
+      resultEyebrow={wagerSetup ? "Próxima partida" : undefined}
+      resultTitle={wagerSetup ? "NOVA APOSTA" : undefined}
+      resultDetail={resultDetail}
+      resultActions={resultActions}
     />
   </PageShell>;
 }
