@@ -12,7 +12,7 @@ export function HowToPlayPage() {
     <div className="example-row"><div><span><DiceFace value={4} small /><DiceFace value={4} small /></span><strong>4 × 2² = 16</strong></div><div><span><DiceFace value={4} small /><DiceFace value={4} small /><DiceFace value={4} small /></span><strong>4 × 3² = 36</strong></div></div>
     <div className="rule-step"><b>4</b><div><h2>Quebre a coluna rival</h2><p>O mesmo valor na coluna oposta destrói todos os dados iguais do adversário.</p></div></div>
     <div className="rule-step"><b>5</b><div><h2>Feche o tabuleiro</h2><p>Quando um tabuleiro encher, vence a maior pontuação.</p></div></div>
+    <div className="rule-step"><b>●</b><div><h2>Ganhe moedas</h2><p>Vitórias contra bots rendem 10, 25 ou 50 moedas. Nas salas online, o criador pode definir uma aposta; o vencedor recebe o pote inteiro e, em caso de empate, as moedas são devolvidas.</p></div></div>
     <PixelButton onClick={() => navigate("/play")}>Começar um duelo</PixelButton><PixelButton variant="ghost" onClick={() => navigate("/")}>Voltar</PixelButton>
   </div></PageShell>;
 }
-

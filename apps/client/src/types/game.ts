@@ -7,6 +7,7 @@ export interface ViewPlayer {
   score: number;
   connected: boolean;
   rematch?: boolean;
+  coins?: number;
 }
 
 export interface GameViewSnapshot {
@@ -21,4 +22,3 @@ export interface GameViewSnapshot {
   isRolling: boolean;
   inputLocked: boolean;
 }
-

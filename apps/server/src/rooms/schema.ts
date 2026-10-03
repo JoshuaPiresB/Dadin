@@ -12,6 +12,7 @@ export class PlayerSchema extends Schema {
   connected = true;
   score = 0;
   rematch = false;
+  coins = 0;
   columns = new ArraySchema<ColumnSchema>(new ColumnSchema(), new ColumnSchema(), new ColumnSchema());
 }
 defineTypes(PlayerSchema, {
@@ -20,6 +21,7 @@ defineTypes(PlayerSchema, {
   connected: "boolean",
   score: "number",
   rematch: "boolean",
+  coins: "number",
   columns: [ColumnSchema],
 });
 
@@ -33,6 +35,12 @@ export class DiceRoomState extends Schema {
   finishReason = "";
   turnRevision = 0;
   createdAt = Date.now();
+  hostPlayerId = "";
+  wager = 0;
+  pot = 0;
+  proposedWager = -1;
+  wagerProposalBy = "";
+  round = 0;
 }
 defineTypes(DiceRoomState, {
   roomCode: "string",
@@ -44,6 +52,12 @@ defineTypes(DiceRoomState, {
   finishReason: "string",
   turnRevision: "number",
   createdAt: "number",
+  hostPlayerId: "string",
+  wager: "number",
+  pot: "number",
+  proposedWager: "number",
+  wagerProposalBy: "string",
+  round: "number",
 });
 
 export function schemaToBoard(player: PlayerSchema): Board {
